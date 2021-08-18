@@ -122,6 +122,26 @@
 #define O_NDELAY O_NONBLOCK
 #endif
 
+//CONFIGURATION SETTINGS FOR UI
+static bool show_debug_border = false;
+//How many rows the main window tries to get(25 lines it up with inventory nicely)
+static int main_rows_max = 24;
+
+//Can equipment and inventory be shown if there is space
+static bool inventory_mode = true;
+static bool show_combat_rolls = true;
+//Are the individual menus enabled
+static bool inventory_on = true;
+static bool equipment_on = true;
+//Must be greater than 1
+static int inventory_max = 7;
+//Gap between inventory and equipment, if both are enabled
+static int inventory_gap = 1;
+// -1 lines up with bottom, A positive number sets the y value
+static int main_inline = -1;
+static int items_inline = -1;
+
+
 /*
  * OPTION: some machines lack "cbreak()"
  * On these machines, we use an older definition
@@ -182,7 +202,7 @@ struct term_data
 };
 
 /* Max number of windows on screen */
-#define MAX_TERM_DATA 4
+#define MAX_TERM_DATA 8
 
 /* Information about our windows */
 static term_data data[MAX_TERM_DATA];
@@ -887,7 +907,8 @@ static errr Term_text_gcu(int x, int y, int n, byte a, cptr s)
         /* Draw a normal character */
         waddch(td->win, (byte)s[i]);
     }
-
+	if(show_debug_border)
+		box(td->win,0,0);
     /* Success */
     return (0);
 }
@@ -1081,82 +1102,96 @@ errr init_gcu(int argc, char** argv)
         /* Remember the term */
         angband_term[0] = &data[0].t;
     }
-
-    /* No big screen -- create as many term windows as possible */
     else
     {
-        /*
-         * If we have a REALLY big screen, try to put any
-         * extra real estate into the upper-left window.
-         * Hack -- these constants rely on a-priori knowledge
-         * of the sort of things that go in the windows.
-         *
-         * This patch is by 'bron' from the Angband Forum
-         * under the directions: 'Feel free to use this (or not) as you see
-         * fit.'
-         */
-
-        /* Minimum size for UpperLeft window */
-        const int ul_min_rows = 24;
-        const int ul_min_cols = 80;
-
-        /* Maximum (useful) columns for UpperRight window */
-        const int ur_max_cols = 80;
-
-        /* Maximum (useful) rows for LowerLeft window */
-        const int ll_max_rows = 26;
-
-        /* Actual size of UpperLeft window */
-        int ul_rows = MAX(ul_min_rows, LINES - (ll_max_rows + 1));
-        int ul_cols = MAX(ul_min_cols, COLS - (ur_max_cols + 1));
-
+		//I'm aware this is an absolute mess
+		inventory_mode = (COLS >= 120)&&inventory_mode
+		//Setting Validation TODO: fix this
+		&&inventory_gap>=0&&inventory_max>1;
+		int inventory = 0;
+		if(inventory_mode){
+			//Inventory will leave 16 spots for equipment(more with a gap)
+			inventory = MIN(
+			//If inline is set, adjust space as nescessary
+			(LINES - (items_inline>0?items_inline:0))-
+			//If equipment is off, leave no space
+			(equipment_on?(16+inventory_gap):0)
+			,inventory_max);
+		}
+			
         /* Create several terms */
         for (i = 0; i < num_term; i++)
         {
-            int rows, cols, y, x;
+            int rows = 0;
+			int cols = 0;
+			int y = 0;
+			int x = 0;
 
             /* Decide on size and position */
             switch (i)
             {
-            /* Upper left */
+            /* BOTTOM LEFT(MAIN WINDOW)*/
             case 0:
             {
-                rows = ul_rows;
-                cols = ul_cols;
-                y = x = 0;
+                cols = 80;
+				rows = MIN(main_rows_max,LINES);				
+				x = 0;
+                y = LINES - rows;
+				if(main_inline>-1)
+					y = main_inline;
+				show_combat_rolls = (y>=12);
+				break;
+            }
+
+            /* BOTTOM RIGHT(INVENTORY MENU)*/
+            case 1:
+            {
+				if(!inventory_mode||!inventory_on)
+					break;
+                rows = inventory;
+                cols = COLS - 80;
+                y = LINES - rows;
+                x = 81;
+				if(items_inline>-1)
+					y = items_inline+16+inventory_gap;
                 break;
             }
 
-            /* Lower left */
-            case 1:
+            /* UPPER RIGHT(EQUIPMENT MENU)*/
+            case 2:
             {
-                rows = LINES - (ul_rows + 1);
-                cols = ul_cols;
-                y = ul_rows + 1;
+				if(!inventory_mode||!equipment_on)
+					break;
+                rows = 16;
+                cols = COLS-80;
+                y = LINES - inventory - 16 - inventory_gap;
+                x = 81;
+				if(items_inline>-1)
+					y = items_inline;
+                break;
+            }
+
+            /* UPPER LEFT(COMBAT ROLL) */
+            case 3:
+            {
+				if(!show_combat_rolls)
+					break;
+				cols = 80;
+                rows = 12;
+                y = 0;
                 x = 0;
                 break;
             }
-
-            /* Upper right */
-            case 2:
-            {
-                rows = ul_rows;
-                cols = COLS - (ul_cols + 1);
+			case 4:
+			{
+				if(!show_combat_rolls&&inventory_mode)
+					break;
+				cols = 80;
+                rows = 12;
                 y = 0;
-                x = ul_cols + 1;
+                x = 80;
                 break;
-            }
-
-            /* Lower right */
-            case 3:
-            {
-                rows = LINES - (ul_rows + 1);
-                cols = COLS - (ul_cols + 1);
-                y = ul_rows + 1;
-                x = ul_cols + 1;
-                break;
-            }
-
+			}
             /* XXX */
             default:
             {
